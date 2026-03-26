@@ -8,8 +8,8 @@ function detectSTAR(text = "") {
   let score = 0;
 
   if (/\b(situation|context|background)/.test(t)) score++;
-  if (/\b(task|goal|objective|role)/.test(t)) score++;
-  if (/\b(i built|i created|i implemented|i developed|i worked)/.test(t)) score++;
+  if (/\b(task|goal|objective)/.test(t)) score++;
+  if (/\b(i built|i created|i implemented|i developed)/.test(t)) score++;
   if (/\b(result|impact|improved|reduced|\d+%)/.test(t)) score++;
 
   return score >= 3;
@@ -17,22 +17,19 @@ function detectSTAR(text = "") {
 
 export async function POST(req) {
   try {
-    const body = await req.json();
-    const { questions = [], answers = [], role, roleCat, level, company } = body;
+    const { questions = [], answers = [], role, roleCat, level, company } =
+      await req.json();
 
     if (!questions.length || !answers.length) {
       return NextResponse.json(
-        { error: "questions and answers are required" },
+        { error: "Missing data" },
         { status: 400 }
       );
     }
 
-    // ✅ MOVE IMPORTS INSIDE TRY (SAFE FOR VERCEL)
-    const prismaModule = await import("@/lib/prisma");
-    const aiModule = await import("@/lib/ai");
-
-    const prisma = prismaModule.prisma;
-    const evaluateAllAnswers = aiModule.evaluateAllAnswers;
+    // SAFE IMPORTS (CRITICAL FOR VERCEL)
+    const { prisma } = await import("@/lib/prisma");
+    const { evaluateAllAnswers } = await import("@/lib/ai");
 
     const feedback = await evaluateAllAnswers(
       questions,
@@ -41,11 +38,13 @@ export async function POST(req) {
       level
     );
 
-    const scores = feedback.map(f => f.score);
-
     const overall =
-      scores.length > 0
-        ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
+      feedback.length > 0
+        ? Number(
+            (
+              feedback.reduce((a, b) => a + b.score, 0) / feedback.length
+            ).toFixed(2)
+          )
         : 0;
 
     await prisma.interviewSession.create({
@@ -64,8 +63,11 @@ export async function POST(req) {
             good: feedback[i]?.good ?? "",
             missing: feedback[i]?.missing ?? "",
             better: feedback[i]?.better ?? "",
-            wordCount: (answers[i] ?? "").trim().split(/\s+/).filter(Boolean).length,
-            usedStar: detectSTAR(answers[i] ?? "")
+            wordCount: (answers[i] ?? "")
+              .trim()
+              .split(/\s+/)
+              .filter(Boolean).length,
+            usedSTAR: detectSTAR(answers[i] ?? ""),
           })),
         },
       },
@@ -74,7 +76,7 @@ export async function POST(req) {
     return NextResponse.json({ feedback, overall });
 
   } catch (err) {
-    console.error("[evaluate error]", err);
+    console.error("API ERROR:", err);
 
     return NextResponse.json(
       { error: "Evaluation failed", detail: String(err) },
