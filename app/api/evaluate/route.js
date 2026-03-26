@@ -3,19 +3,14 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * STAR detection helper
- */
-function detectSTAR(text) {
-  if (!text || text.length < 20) return false;
-
+function detectSTAR(text = "") {
   const t = text.toLowerCase();
   let score = 0;
 
-  if (/\b(situation|context|background|when i was|at the time)/.test(t)) score++;
-  if (/\b(task|goal|objective|my role|needed to|had to)/.test(t)) score++;
-  if (/\b(i decided|i implemented|i built|i created|i led|i wrote|i set up)/.test(t)) score++;
-  if (/\b(result|outcome|impact|improved|reduced|increased|\d+%)/.test(t)) score++;
+  if (/\b(situation|context|background)/.test(t)) score++;
+  if (/\b(task|goal|objective|role)/.test(t)) score++;
+  if (/\b(i built|i created|i implemented|i developed|i worked)/.test(t)) score++;
+  if (/\b(result|impact|improved|reduced|\d+%)/.test(t)) score++;
 
   return score >= 3;
 }
@@ -23,17 +18,8 @@ function detectSTAR(text) {
 export async function POST(req) {
   try {
     const body = await req.json();
+    const { questions = [], answers = [], role, roleCat, level, company } = body;
 
-    const {
-      questions = [],
-      answers = [],
-      role,
-      roleCat,
-      level,
-      company,
-    } = body;
-
-    // ✅ VALIDATION
     if (!questions.length || !answers.length) {
       return NextResponse.json(
         { error: "questions and answers are required" },
@@ -41,12 +27,13 @@ export async function POST(req) {
       );
     }
 
-    // ✅ SAFE DYNAMIC IMPORTS (FIXES VERCEL BUILD ISSUE)
-    const prisma = (await import("@/lib/prisma")).prisma;
-    const evaluateAllAnswers =
-      (await import("@/lib/ai")).evaluateAllAnswers;
+    // ✅ MOVE IMPORTS INSIDE TRY (SAFE FOR VERCEL)
+    const prismaModule = await import("@/lib/prisma");
+    const aiModule = await import("@/lib/ai");
 
-    // ✅ AI evaluation
+    const prisma = prismaModule.prisma;
+    const evaluateAllAnswers = aiModule.evaluateAllAnswers;
+
     const feedback = await evaluateAllAnswers(
       questions,
       answers,
@@ -54,17 +41,13 @@ export async function POST(req) {
       level
     );
 
-    const scores = feedback.map((f) => f.score);
+    const scores = feedback.map(f => f.score);
 
-    const overall = scores.length
-      ? parseFloat(
-          (
-            scores.reduce((a, b) => a + b, 0) / scores.length
-          ).toFixed(2)
-        )
-      : 0;
+    const overall =
+      scores.length > 0
+        ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
+        : 0;
 
-    // ✅ DATABASE SAVE (SAFE AT RUNTIME ONLY)
     await prisma.interviewSession.create({
       data: {
         role,
@@ -81,29 +64,20 @@ export async function POST(req) {
             good: feedback[i]?.good ?? "",
             missing: feedback[i]?.missing ?? "",
             better: feedback[i]?.better ?? "",
-            wordCount: (answers[i] ?? "")
-              .trim()
-              .split(/\s+/)
-              .filter(Boolean).length,
-            usedSTAR: detectSTAR(answers[i] ?? ""),
+            wordCount: (answers[i] ?? "").trim().split(/\s+/).filter(Boolean).length,
+            usedStar: detectSTAR(answers[i] ?? "")
           })),
         },
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      feedback,
-      overall,
-    });
+    return NextResponse.json({ feedback, overall });
+
   } catch (err) {
-    console.error("[evaluate]", err);
+    console.error("[evaluate error]", err);
 
     return NextResponse.json(
-      {
-        error: "Evaluation failed",
-        details: err?.message || "Unknown error",
-      },
+      { error: "Evaluation failed", detail: String(err) },
       { status: 500 }
     );
   }
