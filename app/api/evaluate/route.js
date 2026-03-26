@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 function detectSTAR(text = "") {
   const t = text.toLowerCase();
@@ -9,7 +10,7 @@ function detectSTAR(text = "") {
 
   if (/\b(situation|context|background)/.test(t)) score++;
   if (/\b(task|goal|objective)/.test(t)) score++;
-  if (/\b(i built|i created|i implemented|i developed)/.test(t)) score++;
+  if (/\b(i built|i created|i implemented)/.test(t)) score++;
   if (/\b(result|impact|improved|reduced|\d+%)/.test(t)) score++;
 
   return score >= 3;
@@ -17,8 +18,14 @@ function detectSTAR(text = "") {
 
 export async function POST(req) {
   try {
-    const { questions = [], answers = [], role, roleCat, level, company } =
-      await req.json();
+    const {
+      questions = [],
+      answers = [],
+      role,
+      roleCat,
+      level,
+      company,
+    } = await req.json();
 
     if (!questions.length || !answers.length) {
       return NextResponse.json(
@@ -27,9 +34,11 @@ export async function POST(req) {
       );
     }
 
-    // SAFE IMPORTS (CRITICAL FOR VERCEL)
-    const { prisma } = await import("@/lib/prisma");
-    const { evaluateAllAnswers } = await import("@/lib/ai");
+    const prismaModule = await import("@/lib/prisma");
+    const aiModule = await import("@/lib/ai");
+
+    const prisma = prismaModule.prisma;
+    const evaluateAllAnswers = aiModule.evaluateAllAnswers;
 
     const feedback = await evaluateAllAnswers(
       questions,
@@ -42,7 +51,8 @@ export async function POST(req) {
       feedback.length > 0
         ? Number(
             (
-              feedback.reduce((a, b) => a + b.score, 0) / feedback.length
+              feedback.reduce((a, b) => a + b.score, 0) /
+              feedback.length
             ).toFixed(2)
           )
         : 0;
@@ -74,12 +84,11 @@ export async function POST(req) {
     });
 
     return NextResponse.json({ feedback, overall });
-
   } catch (err) {
-    console.error("API ERROR:", err);
+    console.error(err);
 
     return NextResponse.json(
-      { error: "Evaluation failed", detail: String(err) },
+      { error: "Evaluation failed" },
       { status: 500 }
     );
   }
