@@ -3,7 +3,7 @@
 100% free, open-source AI mock interview platform. No login, no signup — just open and practise.
 
 ## Stack
-- **Next.js 14** App Router (JavaScript — no TypeScript)
+- **Next.js 14** App Router (JavaScript)
 - **Prisma** + PostgreSQL — sessions and answers saved automatically
 - **Claude API** (Anthropic) — question generation + answer evaluation
 - **Tailwind CSS**
